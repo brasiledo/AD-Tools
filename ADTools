@@ -1,0 +1,297 @@
+Function Debug-user {
+
+Remove-Variable * -ErrorAction SilentlyContinue
+
+$ErrorActionPreference="silentlycontinue"
+
+cls
+
+write-host '----------------- Debug User ---------------------'
+
+write-host ''
+
+$first = read-host 'enter firstname'
+
+$last = read-host 'enter lastname'
+$get=@()
+$get+=get-aduser -filter {givenname -like $first -and surname -like $last} -Properties lockedout, userprincipalname, enabled, passwordneverexpires, accountexpirationdate, passwordexpired
+if ($get.count -eq 1){
+$passinfo=[datetime]::FromFileTime((get-aduser $get.samaccountname -properties msDS-UserPasswordExpiryTimeComputed).'msDS-UserPasswordExpiryTimeComputed')
+write-host "----------------- Status of $($get.name) ---------------------"
+
+[pscustomobject]@{
+
+'Name:'                   =   "$($get.givenname) $($get.surname)"
+
+'UPN:'                    =   $get.userprincipalname
+
+'SamAccountName'          =   $get.samaccountname
+
+'Enabled:'                =   $get.enabled
+
+'Locked Out:'             =   $get.lockedout
+
+'Password Expires:'       =   ($passinfo).ToString("MM-dd-yyyy")
+
+'Password Never Expires:' =   $get.passwordneverexpires
+
+'Account Expires'         =   $get.accountexpirationdate
+
+} | FL
+}else{
+$get | select @{n='    Name    ';e={$_.name}},@{n='Username';e={$_.samaccountname}}| out-host
+$pick = read-host "select account starting with 0"
+$passinfo=[datetime]::FromFileTime((get-aduser $get[$pick].samaccountname -properties msDS-UserPasswordExpiryTimeComputed).'msDS-UserPasswordExpiryTimeComputed')
+
+write-host "----------------- Status of $($get[$pick].name) ---------------------"
+
+[pscustomobject]@{
+
+'Name:'                   =   "$($get[$pick].givenname) $($get[$pick].surname)"
+
+'UPN:'                    =   $($get[$pick].userprincipalname)
+
+'SamAccountName'          =   $($get[$pick].samaccountname)
+
+'Enabled:'                =   $($get[$pick].enabled)
+
+'Locked Out:'             =   $($get[$pick].lockedout)
+
+'Password Expires:'       =   $($get[$pick].ToString("MM-dd-yyyy"))
+
+'Password Never Expires:' =   $($get[$pick].passwordneverexpires)
+
+'Account Expires'         =   $($g.accountexpirationdate)
+
+} | FL
+}
+read-host 'press enter to continue...'
+
+select-ADFunction
+}
+
+################## username #################
+
+function username {
+cls
+write-host ''
+$input=read-host 'Input Username'
+
+write-host ''
+
+$user= get-aduser $input.trim() -Properties samaccountname, lockedout, userprincipalname, enabled, passwordneverexpires, accountexpirationdate, passwordexpired -ErrorAction SilentlyContinue
+
+$pass=$?
+
+if ($pass) {
+
+$passinfo=[datetime]::FromFileTime((get-aduser $user.samaccountname -properties msDS-UserPasswordExpiryTimeComputed).'msDS-UserPasswordExpiryTimeComputed')
+
+write-host "----------------- Status of $($user.name) ---------------------"
+
+[pscustomobject]@{
+
+'Name:'                   =   "$($user.givenname) $($user.surname)"
+
+'UPN:'                    =   $user.userprincipalname
+
+'SamAccountName'          =   $user.samaccountname
+
+'Enabled:'                =   $user.enabled
+
+'Locked Out:'             =   $user.lockedout
+
+'Password Expires:'       =   ($passinfo).ToString("MM-dd-yyyy")
+
+'Password Never Expires:' =   $User.passwordneverexpires
+
+'Account Expires'         =   $user.accountexpirationdate
+
+} | FL
+
+}else{  write-warning $error[0] }
+
+read-host 'press enter to continue...'
+
+select-ADFunction
+
+}
+
+ 
+
+Function Unlock-ADaccount {
+
+Remove-Variable * -ErrorAction SilentlyContinue
+
+$ErrorActionPreference="silentlycontinue"
+
+cls
+
+$input=read-host 'Input Username'
+
+$user= get-aduser $input.trim() -Properties samaccountname, lockedout -erroraction silentlycontinue
+
+$pass=$?
+
+if ($pass) {
+
+if ($user.lockedout -eq $true) {
+
+try {
+
+Unlock-ADAccount $user.samaccountname -confirm:$false
+
+$user | select name, lockedout | out-host
+
+write-host 'Account unlocked'
+
+}catch{
+
+write-host ''
+
+write-warning $error[0]
+
+write-host ''
+
+$user | select name, lockedout | out-host
+
+}
+
+}
+
+else{
+
+$user | select name, lockedout | out-host
+
+write-host ''
+
+write-host $user.samaccountname 'Account is not locked out'
+
+write-host ''
+
+}
+
+} else {  write-warning $error[0] }
+
+read-host 'press enter to continue...'
+
+select-ADFunction
+
+}
+
+ 
+
+Function Enable-ADaccount {
+
+Remove-Variable * -ErrorAction SilentlyContinue
+
+$ErrorActionPreference="silentlycontinue"
+
+cls
+
+write-host '----------------- Enable User ---------------------'
+
+write-host ''
+
+$input=read-host 'Input Username'
+
+$user= get-aduser $input.trim() -Properties enabled, samaccountname -ErrorAction SilentlyContinue
+
+$pass=$?
+
+if ($pass) {
+
+if ($user.enabled -eq $false) {
+
+try {
+
+Enable-ADAccount $user.samaccountname -confirm:$false
+
+$user | select @{n='User';e={$_.SamAccountName};align="center"}, enabled | out-host
+
+write-host 'Account Was Enabled'
+
+}catch{write-warning $error[0]}
+
+}else {
+
+$user | select @{n='User';e={$_.SamAccountName}}, enabled | out-host
+
+write-host ''; write-host "$($user.SamAccountName) is ALREADY enabled" -fore Yellow -back Black; write-host ''
+
+}
+
+} else {  write-warning $error[0] }
+
+read-host 'press enter to continue...'
+
+select-ADFunction
+
+}
+
+ 
+
+Function select-ADFunction {
+
+Remove-Variable * -ErrorAction SilentlyContinue
+
+$ErrorActionPreference="silentlycontinue"
+
+Find-NeededModules
+
+cls
+
+write-host '======================= Active Directory Tool ======================'
+
+write-host ''
+
+write-host 'Press 1 to Debug User-First/Last Name'
+
+write-host 'Press 2 to Debug User-Username'
+
+write-host 'Press 3 to Unlock user'
+
+write-host 'Press 4 to Enable user'
+
+write-host 'Press Q to Quit'
+
+write-host ''
+
+$selection = read-host 'Select the function to run'
+
+switch ($selection) {
+
+1 {
+
+    Debug-User
+
+}
+
+2 {
+    username
+ 
+ }
+
+3 {
+
+    Unlock-ADAccount
+
+    }
+
+4 {
+
+    Enable-ADaccount
+
+    }
+
+Q {
+
+return
+
+}
+
+}
+
+}
+
+ cls
