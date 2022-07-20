@@ -1,0 +1,86 @@
+#Queries AD Group, pulls Group name, member count, disabled users, group ou, GID number
+#Exports results to a .Log file and places it in a folder (Group-Logs) on your desktop.
+#Auto removes logs older than 7 days
+
+Function groupdetails {
+do{
+$ErrorActionPreference="silentlycontinue"
+
+#clear vaiables before running again
+Remove-Variable * -ErrorAction SilentlyContinue
+
+CLS
+
+#Set Group Variable
+$group = read-host 'Group Name'
+$date=get-date -f "MM-dd-yyyy"
+
+$result= @()
+CLS
+
+#If group exists - gets group information with error checking 
+try{
+$GroupInfo = get-adgroup $Group.trim() -properties * -ErrorAction Silentlycontinue
+$success=$?
+}catch {
+write-warning 'Group does not exist'
+}
+
+#if group exsists, script continues -- Group Membership Information
+If ($success){
+$groupname     =(get-adgroup $groupinfo).samaccountname
+$member        = get-adgroupmember $groupname | where-object {$_.objectclass -like "user"}
+$nonusermember = get-adgroupmember $groupname | where-object {$_.objectclass -notlike "user"}
+if ($member -ne $NULL) {
+$user=$member | % {get-aduser $_ -properties * | where-object {$_.passwordneverexpires -eq $false} -erroraction silentlycontinue }
+$svc=$member | % { get-aduser $_ -properties * | where-object {$_.passwordneverexpires -eq $true}  -erroraction silentlycontinue }
+}
+#output Group results -- Group name, member count, disabled user count, group ou, GID number
+$output=
+[pscustomobject]@{
+'Group Name'             = $groupname
+'Total Members'          = @(get-adgroupmember $groupname).count
+'Disabled Accounts'      = @($user | ? {$_.enabled -eq $false}).count
+'Group OU'               = $($groupinfo.DistinguishedName.Substring($($groupinfo.DistinguishedName).IndexOf('OU=',[System.StringComparison]::CurrentCultureIgnoreCase)))
+
+
+}
+#output to console
+$output | FL | out-host
+
+#Option to List Members
+
+$checkmember=read-host 'List Members? Type 'Y''
+
+#Lists user members with additional user information - Name, SamAccounName, Enabled, UID Number, UnixDirectory, gidNumber, Loginshell
+if ($checkmember -eq 'Y'){
+
+$user | sort-object -Property enabled | Format-table @{n='   Member Name   ';e={$_.name};align="center"}, @{n='SamAccountName';e={$_.SamAccountName};align="center"},uidNumber, unixHomeDirectory, gidNumber,loginShell, @{n='Enabled';e={$_.Enabled};align="center"} | out-host
+
+$svc | sort-object -Property enabled | Format-table @{n='   Service Account  ';e={$_.name};align="center"},@{n='Enabled';e={$_.Enabled};align="center"}| out-host
+
+$nonusermember | format-table @{n='    Name';e={$_.samaccountname}}, @{n=' Object Class';e={$_.objectclass};align="center"}
+write-host ''
+
+
+}
+#Export Data to Log File (Same Directory as PS file)
+
+$LogPath="C:\Users\$env:username\Desktop\Group-Logs"
+new-item -ItemType directory -force -Path $logpath | out-null
+$log="$groupname {$date}.log"
+$result+=$output | FL 
+$result+=$user | sort-object -Property enabled | Format-table @{n='   Member Name   ';e={$_.name};align="center"}, @{n='SamAccountName';e={$_.SamAccountName};align="center"},uidNumber, unixHomeDirectory, gidNumber,loginShell, @{n='Enabled';e={$_.Enabled};align="center"} -autosize
+$result+=$svc | sort-object -Property enabled | Format-table @{n='   Service Account  ';e={$_.name};align="center"},@{n='Enabled';e={$_.Enabled};align="center"}}
+$result+=$nonusermember | format-table @{n='    Name';e={$_.samaccountname}}, ObjectClass -autosize
+$result | out-file $LogPath\$log | out-null
+
+#remove old logs (7 days)
+Get-Item "$logpath\*.log" | where {$_.LastWriteTime -lt (get-date).adddays(-7)} | remove-item
+}
+
+write-host ''
+$quit=read-host "Enter '1' to check more "
+}while ($quit -eq '1')
+
+}
