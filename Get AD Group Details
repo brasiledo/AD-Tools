@@ -17,26 +17,24 @@ write-host ''
 $group = read-host 'Group Name'
 $date=get-date -f "MM-dd-yyyy"
 
-$result= @()
 CLS
 
 #If group exists - gets group information with error checking 
 try{
-$GroupInfo = get-adgroup $Group.trim() -properties * -ErrorAction Silentlycontinue
-$success=$?
+$GroupInfo = get-adgroup $Group.trim() -properties Distinguishedname -ErrorAction Silentlycontinue
 }catch {
-write-warning 'Group does not exist'
+write-host '';write-warning 'Group does not exist';write-host ''
 }
 
 #if group exsists, script continues -- Group Membership Information
-If ($success){
+If ($groupinfo){
 $groupname     = $groupinfo.samaccountname
-$groupmember   = get-adgroupmember $groupname -erroraction silentlycontinue
+$groupmember   = get-adobject -filter {memberof -eq $groupinfo.distinguishedname}
 $member        = $groupmember | where-object {$_.objectclass -like "user"}
 $nonusermember = $groupmember | where-object {$_.objectclass -notlike "user"}
 if ($NULL -ne $member){
-$user=$member | % { get-aduser $_ -pr uidnumber, uidNumber, unixHomeDirectory, gidNumber,loginShell, enabled, memberof | ? { $_.name -notlike 'svc*'} -erroraction silentlycontinue}
-$svc = $member | % { get-aduser $_ -pr enabled, memberof | ? {$_.name -like 'svc*'}  -erroraction silentlycontinue}
+$user= $member | where-object { $_.name -notlike 'svc*'} | foreach-object { get-aduser $_ -properties uidnumber, uidNumber, unixHomeDirectory, gidNumber,loginShell, enabled, memberof }
+$svc = $member | where-object {$_.name -like 'svc*'} | foreach-object { get-aduser $_ -properties enabled, memberof}
 }
 
 #output Group results -- Group name, member count, disabled user count, group ou, GID number
@@ -44,26 +42,23 @@ $output=
 [pscustomobject]@{
 'Group Name'             = $groupname
 'Total Members'          = @($groupmember).count
-'Disabled Accounts'      = @($user | ? {$_.enabled -eq $false}).count
+'Disabled Accounts'      = @($user | where-object {$_.enabled -eq $false}).count
 'Group OU'               = $($groupinfo.DistinguishedName.Substring($($groupinfo.DistinguishedName).IndexOf('OU=',[System.StringComparison]::CurrentCultureIgnoreCase)))
-}
-$output | FL | out-host
+} 
 
-$user | sort-object -Property enabled | Format-table @{n='   Member Name   ';e={$_.name};align="center"}, @{n='SamAccountName';e={$_.SamAccountName};align="center"},uidNumber, unixHomeDirectory, gidNumber,loginShell, @{n='Enabled';e={$_.Enabled};align="center"}, @{n='  UX-RG-UnixUsers Group Member';e={$_.memberof -contains 'CN=UX-RG-UnixUsers,OU=Role,OU=Unix Groups,OU=Unix,DC=CORP,DC=CHARTERCOM,DC=com'};align="center"} | out-host
-
-$svc | sort-object -Property enabled | Format-table @{n='   Service Account  ';e={$_.name};align="center"},@{n='Enabled';e={$_.Enabled};align="center"},@{n='  UX-RG-UnixUsers Group Member';e={$_.memberof -contains 'CN=UX-RG-UnixUsers,OU=Role,OU=Unix Groups,OU=Unix,DC=CORP,DC=CHARTERCOM,DC=com'};align="center"}| out-host
-
-$nonusermember | format-table @{n='    Name';e={$_.samaccountname}}, @{n=' Object Class';e={$_.objectclass};align="center"}
-write-host ''
 #Export Data to Log File
-$LogPath="LOG PATH"  -- #update this path
+$LogPath="C:\Users\$env:username\Desktop\Group-Logs"
 new-item -ItemType directory -force -Path $logpath | out-null
 $log="$groupname {$date}.log"
-$result+=$output | FL 
-$result+=$user | sort-object -Property enabled | Format-table @{n='   Member Name   ';e={$_.name};align="center"}, @{n='SamAccountName';e={$_.SamAccountName};align="center"},uidNumber, unixHomeDirectory, gidNumber,loginShell, @{n='Enabled';e={$_.Enabled};align="center"}, @{n='UX-RG-UnixUsers Group Member';e={$_.memberof -contains 'CN=UX-RG-UnixUsers,OU=Role,OU=Unix Groups,OU=Unix,DC=CORP,DC=CHARTERCOM,DC=com'};align="center"} -autosize
-$result+=$svc | sort-object -Property enabled | Format-table @{n='   Service Account  ';e={$_.name};align="center"},@{n='Enabled';e={$_.Enabled};align="center"},@{n='  UX-RG-UnixUsers Group Member';e={$_.memberof -contains 'CN=UX-RG-UnixUsers,OU=Role,OU=Unix Groups,OU=Unix,DC=CORP,DC=CHARTERCOM,DC=com'};align="center"}
-$result+=$nonusermember | format-table @{n='    Name';e={$_.samaccountname}}, ObjectClass -autosize
-$result | out-file $LogPath\$log | out-null
+
+$result=@(
+$output | Format-List
+$user | sort-object -Property enabled | Format-table @{n='   Member Name   ';e={$_.name};align="center"}, @{n='SamAccountName';e={$_.SamAccountName};align="center"},uidNumber, unixHomeDirectory, gidNumber,loginShell, @{n='Enabled';e={$_.Enabled};align="center"}, @{n='UX-RG-UnixUsers Group Member';e={$_.memberof -contains 'CN=UX-RG-UnixUsers,OU=Role,OU=Unix Groups,OU=Unix,DC=CORP,DC=CHARTERCOM,DC=com'};align="center"} -autosize
+$svc | sort-object -Property enabled | Format-table @{n='   Service Account  ';e={$_.name};align="center"},@{n='Enabled';e={$_.Enabled};align="center"},@{n='  UX-RG-UnixUsers Group Member';e={$_.memberof -contains 'CN=UX-RG-UnixUsers,OU=Role,OU=Unix Groups,OU=Unix,DC=CORP,DC=CHARTERCOM,DC=com'};align="center"}
+$nonusermember | format-table @{n='  Name     ';e={$_.name}}, @{n=' Object Class';e={$_.objectclass};align="center"}
+)
+$result
+$result | out-file $LogPath\$log
 
 #remove old logs (7 days)
 Get-Item "$logpath\*.log" | where {$_.LastWriteTime -lt (get-date).adddays(-7)} | remove-item
@@ -71,4 +66,5 @@ Get-Item "$logpath\*.log" | where {$_.LastWriteTime -lt (get-date).adddays(-7)} 
 
 $return=read-host "Enter '1' to check more"
 }while ($return -eq '1')
+
 }
