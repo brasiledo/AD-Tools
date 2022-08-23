@@ -53,12 +53,14 @@ $svc | sort-object -Property enabled | Format-table @{n='   Service Account  ';e
 $nonusermember | format-table @{n='  Name     ';e={$_.name}}, @{n=' Object Class';e={$_.objectclass};align="center"}
 )
 $result
-$result | out-file $LogPath\$log
 
 #Export Data to Log File
-$LogPath="C:\Users\$env:username\Desktop\Group-Logs"
+$LogPath="$env:userprofile\Desktop\Group-Logs"
 new-item -ItemType directory -force -Path $logpath | out-null
 $log="$groupname {$date}.log"
+
+$result | out-file $LogPath\$log
+
 
 #remove old logs (7 days)
 Get-Item "$logpath\*.log" | where {$_.LastWriteTime -lt (get-date).adddays(-7)} | remove-item
@@ -66,6 +68,5 @@ Get-Item "$logpath\*.log" | where {$_.LastWriteTime -lt (get-date).adddays(-7)} 
 
 $return=read-host "Enter '1' to check more"
 }while ($return -eq '1')
-}
 
-}
+  }
